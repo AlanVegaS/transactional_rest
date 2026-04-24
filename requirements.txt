@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+redis[asyncio]
+sqlalchemy[asyncio]
+asyncpg
+pydantic
