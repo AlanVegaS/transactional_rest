@@ -16,3 +16,8 @@ async def get_cached(key: str) -> Any | None:
 
 async def set_cached(key: str, value: Any) -> None:
     await client.set(f"idempotency:{key}", json.dumps(value), ex=TTL)
+
+
+# Stream
+STREAM_TRANSACTIONS = "stream:transactions"
+GROUP_NAME = "workers"

@@ -6,9 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.transactions import Transaction
-from app.core.store import get_cached, set_cached
+from app.core.redis import get_cached, set_cached
 from app.logger import get_logger
 from app.schemas.transactions import TransactionBase, TransactionCreateResponse
+from app.workers.producer import publish_pending_transactions
 
 logger = get_logger(__name__)
 
@@ -69,3 +70,10 @@ async def transaction_create(
     await set_cached(key, response.model_dump())
 
     return response
+
+
+@transactionRouter.post("/async-process")
+async def async_process():
+    transactions_count = await publish_pending_transactions()
+
+    return {"message": f"{transactions_count} Transactions published to stream"}

@@ -1,7 +1,7 @@
 services:
   api:
     build: .
-    container_name: test_legalario
+    container_name: rest_legalario
     ports:
       - "8000:8000"
     env_file:
@@ -17,7 +17,7 @@ services:
 
   redis:
     image: redis:alpine
-    container_name: redis-legalario
+    container_name: redis_legalario
     ports:
       - "6379:6379"
     volumes:
@@ -30,7 +30,7 @@ services:
 
   db:
     image: postgres:16-alpine
-    container_name: postgres-legalario
+    container_name: postgres_legalario
     ports:
       - "5432:5432"
     env_file:
@@ -42,6 +42,18 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  worker:
+    build: .
+    container_name: worker_legalario
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: python -m app.workers.consumer
 
 volumes:
   redis_data:
