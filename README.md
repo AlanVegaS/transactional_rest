@@ -1,9 +1,24 @@
-# Build and run project
+# 1. Create .env
+```
+# Database Configuration
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=prueba_legalario
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+
+# Redis Configuration
+REDIS_HOST=redis
+REDIS_PORT=6379
+
+```
+
+# 2. Build and run project
 ```
 docker compose up --build
 ```
 
-# Run project
+# 3. Run project
 ```
 docker compose up
 ```

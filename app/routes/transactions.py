@@ -1,6 +1,6 @@
 from uuid import UUID, uuid4
 
-from fastapi import Header, Depends, APIRouter
+from fastapi import WebSocket, Header, Depends, APIRouter, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,7 +9,8 @@ from app.models.transactions import Transaction
 from app.core.redis import get_cached, set_cached
 from app.logger import get_logger
 from app.schemas.transactions import TransactionBase, TransactionCreateResponse
-from app.workers.producer import publish_pending_transactions
+from app.workers.producer import publish_pending_transactions, get_queue_status
+from app.core.websocket_manager import manager
 
 logger = get_logger(__name__)
 
@@ -77,3 +78,25 @@ async def async_process():
     transactions_count = await publish_pending_transactions()
 
     return {"message": f"{transactions_count} Transactions published to stream"}
+
+
+@transactionRouter.websocket("/stream")
+async def queue_websocket(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        queue = await get_queue_status()
+        await websocket.send_json({
+            "event": "queue_status",
+            "total": len(queue),
+            "data":  queue,
+        })
+
+        while True:
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                break
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        manager.disconnect(websocket)

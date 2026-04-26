@@ -1,9 +1,14 @@
+import json
 import asyncio
+
 from sqlalchemy import select
+
 from app.core.database import SessionLocal
 from app.core.redis import client, STREAM_TRANSACTIONS, GROUP_NAME
 from app.models.transactions import Transaction
 from app.logger import get_logger
+from app.workers.producer import get_queue_status
+from app.core.websocket_manager import manager
 
 logger = get_logger(__name__)
 
@@ -18,12 +23,11 @@ async def create_group():
 
 async def process_transaction(data: dict) -> bool:
     logger.info(f"Processing transaction {data['id']} — amount: {data['amount']}")
-    await asyncio.sleep(3)
+    await asyncio.sleep(8)
     return True
 
 
 async def update_state(tx_id: str, state: str):
-    logger.info(f"Updating state of transaction {tx_id} to {state}")
     async with SessionLocal() as db:
         result = await db.execute(
             select(Transaction).where(Transaction.id == tx_id)
@@ -32,7 +36,18 @@ async def update_state(tx_id: str, state: str):
         if tx:
             tx.state = state
             await db.commit()
-            logger.info(f"Transaction {tx}")
+
+    queue = await get_queue_status()
+    
+    await client.publish(STREAM_TRANSACTIONS, json.dumps({
+        "event": "transaction_updated",
+        "transaction_updated": {
+            "id": tx_id,
+            "state": state,
+        },
+        "total": len(queue),
+        "data":  queue,
+    }))
 
 
 async def consume():
@@ -40,7 +55,7 @@ async def consume():
     logger.info("Worker listening...")
 
     while True:
-        messages = await client.xreadgroup(
+        transactions = await client.xreadgroup(
             groupname=GROUP_NAME,
             consumername="worker-1",
             streams={STREAM_TRANSACTIONS: ">"},
@@ -48,18 +63,18 @@ async def consume():
             block=2000,
         )
 
-        if not messages:
+        if not transactions:
             continue
 
-        for stream, entries in messages:
-            for message_id, data in entries:
+        for stream, entries in transactions:
+            for transaction_id, data in entries:
                 try:
                     success = await process_transaction(data)
                     new_state = "completed" if success else "failed"
 
                     await update_state(data["id"], new_state)
 
-                    await client.xack(STREAM_TRANSACTIONS, GROUP_NAME, message_id)
+                    await client.xack(STREAM_TRANSACTIONS, GROUP_NAME, transaction_id)
 
                 except Exception as e:
                     logger.error(f"Error processing {data['id']}: {e}")

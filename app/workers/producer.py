@@ -23,9 +23,31 @@ async def publish_pending_transactions():
                     "user_id": tx.user_id,
                     "amount": str(tx.amount),
                     "transaction_type": tx.transaction_type,
+                    "state": tx.state,
+                    "created_at": str(tx.created_at),
                 },
             )
             logger.info(f"transaction published: {tx.id}")
 
     logger.info(f"{len(transactions)} transactions sent to the stream")
     return len(transactions)
+
+async def get_queue_status() -> list[dict]:
+    async with SessionLocal() as db:
+        result = await db.execute(
+            select(Transaction)
+        )
+        transactions = result.scalars().all()
+        logger.info(f"transactions --------------------------> {transactions}")
+    result = []
+    for transaction in transactions:
+        result.append({
+            "id": transaction.id,
+            "user_id": transaction.user_id,
+            "amount": transaction.amount,
+            "state": transaction.state,
+            "transaction_type": transaction.transaction_type,
+            "created_at": str(transaction.created_at),
+        })
+
+    return result
