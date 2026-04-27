@@ -11,6 +11,8 @@ POSTGRES_PORT=5432
 REDIS_HOST=redis
 REDIS_PORT=6379
 
+# Gemini API Key
+GEMINI_API_KEY=your-api-key
 ```
 
 # 2. Build and run project

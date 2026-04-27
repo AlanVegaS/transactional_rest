@@ -1,16 +1,14 @@
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from fastapi import WebSocket, Header, Depends, APIRouter, WebSocketDisconnect
-from sqlalchemy import select
+from fastapi import WebSocket, Header, Depends, APIRouter, WebSocketDisconnect, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.transactions import Transaction
-from app.core.redis import get_cached, set_cached
-from app.logger import get_logger
-from app.schemas.transactions import TransactionBase, TransactionCreateResponse
-from app.workers.producer import publish_pending_transactions, get_queue_status
 from app.core.websocket_manager import manager
+from app.services.transaction.create_transaction import create_transaction
+from app.workers.producer import publish_pending_transactions, get_queue_status
+from app.schemas.transactions import TransactionBase, TransactionCreateResponse
+from app.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -23,67 +21,22 @@ async def transaction_create(
     idempotency_key: UUID = Header(...),
     db: AsyncSession = Depends(get_db),
 ):
-    logger.info(f"Creating transaction with idempotency key: {idempotency_key}")
-    key = str(idempotency_key)
+    try:
+        key = str(idempotency_key)
+    except Exception as e:
+        logger.error(f"Error creating transaction: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error creating transaction")
 
-    # 1. Search in Redis Cache
-    cached = await get_cached(key)
-    if cached:
-        return cached
-
-    # 2. Search in PostgreSQL (in case the cache has expired)
-    result = await db.execute(select(Transaction).where(Transaction.idempotency_key == key))
-    existing = result.scalar_one_or_none()
-    if existing:
-        response = TransactionCreateResponse(
-            id=existing.id,
-            user_id=existing.user_id,
-            amount=existing.amount,
-            transaction_type=existing.transaction_type,
-            state=existing.state,
-            created_at=str(existing.created_at),
-        )
-        await set_cached(key, response.model_dump())
-        return response
-
-    # 3. First time -> save in DB
-    transaction = Transaction(
-        id=str(uuid4()),
-        idempotency_key=key,
-        user_id=body.user_id,
-        amount=body.amount,
-        transaction_type=body.transaction_type,
-    )
-    db.add(transaction)
-    await db.commit()
-    await db.refresh(transaction)
-
-    response = TransactionCreateResponse(
-        id=str(transaction.id),
-        user_id=str(transaction.user_id),
-        amount=transaction.amount,
-        transaction_type=transaction.transaction_type,
-        state=transaction.state,
-        created_at=str(transaction.created_at),
-    )
-
-    # 4. Save in Redis for subsequent requests
-    await set_cached(key, response.model_dump())
-
-    # 5. Broadcast all DB records to connected WebSocket clients
-    all_transactions = await get_queue_status()
-    await manager.broadcast({
-        "event": "transaction_created",
-        "total": len(all_transactions),
-        "data": all_transactions,
-    })
-
-    return response
+    return await create_transaction(body, key, db)
 
 
 @transactionRouter.post("/async-process")
 async def async_process():
-    transactions_count = await publish_pending_transactions()
+    try:
+        transactions_count = await publish_pending_transactions()
+    except Exception as e:
+        logger.error(f"Error processing transactions: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error processing transactions")
 
     return {"message": f"{transactions_count} Transactions published to stream"}
 
