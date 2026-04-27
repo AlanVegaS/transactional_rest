@@ -70,6 +70,14 @@ async def transaction_create(
     # 4. Save in Redis for subsequent requests
     await set_cached(key, response.model_dump())
 
+    # 5. Broadcast all DB records to connected WebSocket clients
+    all_transactions = await get_queue_status()
+    await manager.broadcast({
+        "event": "transaction_created",
+        "total": len(all_transactions),
+        "data": all_transactions,
+    })
+
     return response
 
 

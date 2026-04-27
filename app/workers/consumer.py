@@ -1,13 +1,12 @@
 import json
 import asyncio
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.core.database import SessionLocal
 from app.core.redis import client, STREAM_TRANSACTIONS, GROUP_NAME
 from app.models.transactions import Transaction
 from app.logger import get_logger
-from app.workers.producer import get_queue_status
 from app.core.websocket_manager import manager
 
 logger = get_logger(__name__)
@@ -21,9 +20,35 @@ async def create_group():
         logger.info("Group already exists")
 
 
+def _serialize_transactions(transactions) -> list[dict]:
+    return [
+        {
+            "id": tx.id,
+            "user_id": tx.user_id,
+            "amount": tx.amount,
+            "state": tx.state,
+            "transaction_type": tx.transaction_type,
+            "created_at": str(tx.created_at),
+        }
+        for tx in transactions
+    ]
+
+
 async def process_transaction(data: dict) -> bool:
     logger.info(f"Processing transaction {data['id']} — amount: {data['amount']}")
-    await asyncio.sleep(8)
+    async with SessionLocal() as db:
+        await db.execute(
+            update(Transaction).where(Transaction.id == data['id']).values(state="running")
+        )
+        await db.commit()
+        result = await db.execute(select(Transaction))
+        transactions = _serialize_transactions(result.scalars().all())
+    await client.publish(STREAM_TRANSACTIONS, json.dumps({
+        "event": "transaction_updated",
+        "total": len(transactions),
+        "data":  transactions,
+    }))
+    await asyncio.sleep(9)
     return True
 
 
@@ -36,9 +61,9 @@ async def update_state(tx_id: str, state: str):
         if tx:
             tx.state = state
             await db.commit()
+        result = await db.execute(select(Transaction))
+        queue = _serialize_transactions(result.scalars().all())
 
-    queue = await get_queue_status()
-    
     await client.publish(STREAM_TRANSACTIONS, json.dumps({
         "event": "transaction_updated",
         "transaction_updated": {

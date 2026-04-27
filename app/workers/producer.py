@@ -38,7 +38,6 @@ async def get_queue_status() -> list[dict]:
             select(Transaction)
         )
         transactions = result.scalars().all()
-        logger.info(f"transactions --------------------------> {transactions}")
     result = []
     for transaction in transactions:
         result.append({
