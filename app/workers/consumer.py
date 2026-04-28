@@ -48,7 +48,7 @@ async def process_transaction(data: dict) -> bool:
         "total": len(transactions),
         "data":  transactions,
     }))
-    await asyncio.sleep(9)
+    await asyncio.sleep(4)
     return True
 
 

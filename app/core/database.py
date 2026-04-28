@@ -3,6 +3,10 @@ import os
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 
+from app.logger import get_logger
+
+logger = get_logger(__name__)
+
 DATABASE_URL = (
     f"postgresql+asyncpg://"
     f"{os.getenv('POSTGRES_USER')}:"
